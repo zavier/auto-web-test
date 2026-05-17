@@ -129,7 +129,21 @@ export class ExpenseApp {
       await this.fillText('remark', args.remark);
     }
 
+    const submitResponse = this.page.waitForResponse((response) => {
+      const url = response.url();
+      return url.includes('/expense/project') && response.request().method() === 'POST';
+    });
     await this.submitDialog('提交');
+    const response = await submitResponse;
+
+    if (!response.ok()) {
+      throw new Error(`expense create submit failed with HTTP ${response.status()}`);
+    }
+
+    const body = (await response.json()) as { status?: number; msg?: string };
+    if (body.status !== 0) {
+      throw new Error(`expense create API failed: ${body.msg ?? JSON.stringify(body)}`);
+    }
 
     await this.page.goto(`/expense/index-cdn.html#/expense/${this.latestProjectId}/list`);
     await expect(this.page.getByText(args.remark ?? String(args.amount))).toBeVisible();
