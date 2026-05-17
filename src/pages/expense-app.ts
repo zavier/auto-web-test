@@ -8,6 +8,7 @@ type LoginArgs = {
 type CreateProjectArgs = {
   name: string;
   description?: string;
+  members?: string[];
 };
 
 type AddMembersArgs = {
@@ -55,30 +56,168 @@ export class ExpenseApp {
     await expect(this.page.getByRole('button', { name: '创建项目' })).toBeVisible();
   }
 
-  async createProject(args: CreateProjectArgs): Promise<void> {
+  async createProject(args: CreateProjectArgs): Promise<{ projectId: number; projectName: string }> {
     this.latestProjectName = args.name;
     await this.page.getByRole('button', { name: '创建项目' }).click();
     await this.page.locator('input[name="projectName"]').fill(args.name);
     await this.page.locator('input[name="projectDesc"]').fill(args.description ?? '');
-  }
 
-  async addMembers(args: AddMembersArgs): Promise<void> {
-    for (const member of args.members) {
-      await this.page.getByRole('button', { name: '新增', exact: true }).click();
-      const input = this.page.locator('input[name="flat"]').last();
-      await input.click();
-      await input.pressSequentially(member, { delay: 20 });
-      await this.page.keyboard.press('Tab');
+    if (args.members) {
+      await this.fillInputArray('成员', args.members);
     }
 
-    await this.createProjectByApi(args.members);
+    await this.createProjectByApi(args.members ?? []);
+
+    // Close the create dialog before navigating away
+    await this.page.getByRole('button', { name: '取消' }).click();
+    await this.page.waitForTimeout(500);
     await this.page.goto('/expense/index-cdn.html#/project/list');
+
+    return { projectId: this.latestProjectId!, projectName: args.name };
+  }
+
+  async addMembers(args: AddMembersArgs): Promise<{ projectId: number }> {
+    if (!this.latestProjectId) {
+      throw new Error('Cannot add members before project.create has produced a project id.');
+    }
+
+    if (!this.latestProjectName) {
+      throw new Error('Cannot add members before project.create has set a project name.');
+    }
+
+    await this.page.goto('/expense/index-cdn.html#/project/list');
+
+    const projectRow = this.page.locator('tr').filter({ hasText: this.latestProjectName });
+    await expect(projectRow).toBeVisible();
+    await projectRow.getByRole('button', { name: '编辑' }).click();
+
+    // Wait for edit form to be ready
+    await expect(this.page.getByRole('button', { name: '提交' })).toBeVisible();
+
+    await this.fillInputArray('成员', args.members);
+
+    // Capture the submit response and verify success
+    const submitResponse = this.page.waitForResponse((response) => {
+      const url = response.url();
+      return url.includes('/expense/project') && response.request().method() === 'POST';
+    });
+    await this.page.getByRole('button', { name: '提交' }).click();
+    const response = await submitResponse;
+
+    if (!response.ok()) {
+      throw new Error(`addMembers submit failed with HTTP ${response.status()}`);
+    }
+
+    const body = (await response.json()) as { status?: number; msg?: string };
+    if (body.status !== 0) {
+      throw new Error(`addMembers API failed: ${body.msg ?? JSON.stringify(body)}`);
+    }
+
+    await this.page.goto('/expense/index-cdn.html#/project/list');
+
+    return { projectId: this.latestProjectId };
   }
 
   async createExpense(args: CreateExpenseArgs): Promise<void> {
+    if (!this.latestProjectId || !this.latestProjectName) {
+      throw new Error('Cannot create expense before project.create has produced a project id.');
+    }
+
     await this.createExpenseByApi(args);
+
+    // Navigate to expense list to verify
     await this.page.goto(`/expense/index-cdn.html#/expense/${this.latestProjectId}/list`);
     await expect(this.page.getByText(args.remark ?? String(args.amount))).toBeVisible();
+  }
+
+  private async createExpenseByApi(args: CreateExpenseArgs): Promise<void> {
+    if (!this.authToken) {
+      throw new Error('Cannot create expense by API before auth.login has stored a token.');
+    }
+
+    const response = await this.page.request.post('https://zhengw-tech.com/expense/project/addRecord', {
+      headers: {
+        Authorization: this.authToken
+      },
+      data: {
+        projectId: this.latestProjectId,
+        projectName: this.latestProjectName,
+        payMember: args.payer,
+        consumerMembers: args.participants,
+        amount: args.amount,
+        date: Math.floor(Date.now() / 1000),
+        expenseType: args.category,
+        remark: args.remark ?? ''
+      }
+    });
+    const body = (await response.json()) as { status: number; msg?: string };
+
+    if (body.status !== 0) {
+      throw new Error(`Expense API create failed: ${body.msg ?? JSON.stringify(body)}`);
+    }
+  }
+
+  private async fillInputArray(_label: string, values: string[]): Promise<void> {
+    for (const value of values) {
+      await this.page.getByRole('button', { name: '新增', exact: true }).click();
+      const input = this.page.locator('input[name="flat"]').last();
+      await input.click();
+      await input.pressSequentially(value, { delay: 20 });
+      await this.page.keyboard.press('Tab');
+    }
+  }
+
+  private async fillText(name: string, value: string): Promise<void> {
+    await this.page.locator(`input[name="${name}"]`).fill(value);
+  }
+
+  private async submitDialog(title = '提交'): Promise<void> {
+    await this.page.getByRole('button', { name: title }).click();
+  }
+
+  private async selectSingle(label: string, value: string): Promise<void> {
+    const group = this.page.locator('.cxd-Form-group, .cxd-Form-item').filter({ hasText: label });
+    const trigger = group.locator('.cxd-Select').first();
+
+    await trigger.scrollIntoViewIfNeeded();
+    await trigger.click();
+
+    const overlay = this.page.locator('.cxd-Overlay').last();
+    await expect(overlay).toBeVisible({ timeout: 5_000 });
+
+    const searchInput = overlay.locator('input').first();
+    const hasSearch = (await searchInput.count()) > 0;
+
+    if (hasSearch) {
+      await searchInput.pressSequentially(value, { delay: 20 });
+      await this.page.keyboard.press('Enter');
+    } else {
+      await overlay.getByText(value, { exact: true }).first().click();
+    }
+
+    await expect(overlay).not.toBeVisible({ timeout: 5_000 });
+
+    await expect(group.getByText(value, { exact: true })).toBeVisible({ timeout: 5_000 });
+  }
+
+  private async selectMultiple(label: string, values: string[]): Promise<void> {
+    const group = this.page.locator('.cxd-Form-group, .cxd-Form-item').filter({ hasText: label });
+    const trigger = group.locator('.cxd-Select').first();
+
+    await trigger.scrollIntoViewIfNeeded();
+    await trigger.click();
+
+    const overlay = this.page.locator('.cxd-Overlay').last();
+    await expect(overlay).toBeVisible({ timeout: 5_000 });
+
+    for (const value of values) {
+      const option = overlay.getByText(value, { exact: true }).first();
+      await option.click();
+      await expect(group.getByText(value, { exact: true })).toBeVisible({ timeout: 5_000 });
+    }
+
+    await this.page.keyboard.press('Escape');
+    await expect(overlay).not.toBeVisible({ timeout: 5_000 });
   }
 
   private async createProjectByApi(members: string[]): Promise<void> {
@@ -107,13 +246,6 @@ export class ExpenseApp {
     }
 
     this.latestProjectId = await this.findProjectIdByName(this.latestProjectName);
-  }
-
-  private async selectFirstVisibleOption(triggerText: string, optionText: string): Promise<void> {
-    await this.page.getByText(triggerText).first().click();
-    const option = this.page.getByText(optionText, { exact: true }).last();
-    await expect(option).toBeVisible();
-    await option.click();
   }
 
   private async findProjectIdByName(projectName: string): Promise<number> {
@@ -150,34 +282,5 @@ export class ExpenseApp {
     return project.projectId;
   }
 
-  private async createExpenseByApi(args: CreateExpenseArgs): Promise<void> {
-    if (!this.authToken) {
-      throw new Error('Cannot create expense by API before auth.login has stored a token.');
-    }
 
-    if (!this.latestProjectId || !this.latestProjectName) {
-      throw new Error('Cannot create expense before project.create has produced a project id.');
-    }
-
-    const response = await this.page.request.post('https://zhengw-tech.com/expense/project/addRecord', {
-      headers: {
-        Authorization: this.authToken
-      },
-      data: {
-        projectId: this.latestProjectId,
-        projectName: this.latestProjectName,
-        payMember: args.payer,
-        consumerMembers: args.participants,
-        amount: args.amount,
-        date: Math.floor(Date.now() / 1000),
-        expenseType: args.category,
-        remark: args.remark ?? ''
-      }
-    });
-    const body = (await response.json()) as { status: number; msg?: string };
-
-    if (body.status !== 0) {
-      throw new Error(`Expense API create failed: ${body.msg ?? JSON.stringify(body)}`);
-    }
-  }
 }
