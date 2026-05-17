@@ -138,6 +138,37 @@ export class ExpenseApp {
     await this.page.getByRole('button', { name: title }).click();
   }
 
+  private async selectSingle(label: string, value: string): Promise<void> {
+    // Locate the form row containing the label text, then find the select trigger within it
+    const group = this.page.locator('.cxd-Form-group, .cxd-Form-item').filter({ hasText: label });
+    const trigger = group.locator('.cxd-Select').first();
+
+    await trigger.scrollIntoViewIfNeeded();
+    await trigger.click();
+
+    // Wait for dropdown overlay
+    const overlay = this.page.locator('.cxd-Overlay').last();
+    await expect(overlay).toBeVisible({ timeout: 5_000 });
+
+    // Try keyboard search first
+    const searchInput = overlay.locator('input').first();
+    const hasSearch = (await searchInput.count()) > 0;
+
+    if (hasSearch) {
+      await searchInput.pressSequentially(value, { delay: 20 });
+      await this.page.keyboard.press('Enter');
+    } else {
+      // Fallback: click the matching option directly
+      await overlay.getByText(value, { exact: true }).first().click();
+    }
+
+    // Wait for overlay to close
+    await expect(overlay).not.toBeVisible({ timeout: 5_000 });
+
+    // Verify the selected value is visible in the form row
+    await expect(group.getByText(value, { exact: true })).toBeVisible({ timeout: 5_000 });
+  }
+
   private async createProjectByApi(members: string[]): Promise<void> {
     if (!this.authToken) {
       throw new Error('Cannot create project by API before auth.login has stored a token.');
