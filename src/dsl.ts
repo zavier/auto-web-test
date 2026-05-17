@@ -82,11 +82,6 @@ export const sampleExpenseWorkflow = (suffix = Date.now().toString()): Workflow 
     args: {
       name: `测试自动化项目 ${suffix}`,
       description: '这是测试自动化的项目',
-    },
-  },
-  {
-    task: 'project.addMembers',
-    args: {
       members: ['自动化1号', '自动化2号', '自动化3号'],
     },
   },

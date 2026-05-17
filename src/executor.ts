@@ -36,6 +36,9 @@ export class WorkflowExecutor {
         const output = await this.runTask(step);
         log.status = 'success';
         log.output = output;
+        if (output) {
+          Object.assign(result.outputs, output);
+        }
       } catch (error) {
         log.status = 'failed';
         log.error = error instanceof Error ? error.message : String(error);
@@ -58,11 +61,9 @@ export class WorkflowExecutor {
         await this.app.login(step.args);
         return undefined;
       case 'project.create':
-        await this.app.createProject(step.args);
-        return undefined;
+        return await this.app.createProject(step.args);
       case 'project.addMembers':
-        await this.app.addMembers(step.args);
-        return undefined;
+        return await this.app.addMembers(step.args);
       case 'expense.create':
         await this.app.createExpense(step.args);
         return undefined;

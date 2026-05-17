@@ -8,6 +8,7 @@ type LoginArgs = {
 type CreateProjectArgs = {
   name: string;
   description?: string;
+  members?: string[];
 };
 
 type AddMembersArgs = {
@@ -55,30 +56,78 @@ export class ExpenseApp {
     await expect(this.page.getByRole('button', { name: '创建项目' })).toBeVisible();
   }
 
-  async createProject(args: CreateProjectArgs): Promise<void> {
+  async createProject(args: CreateProjectArgs): Promise<{ projectId: number; projectName: string }> {
     this.latestProjectName = args.name;
     await this.page.getByRole('button', { name: '创建项目' }).click();
     await this.page.locator('input[name="projectName"]').fill(args.name);
     await this.page.locator('input[name="projectDesc"]').fill(args.description ?? '');
-  }
 
-  async addMembers(args: AddMembersArgs): Promise<void> {
-    for (const member of args.members) {
-      await this.page.getByRole('button', { name: '新增', exact: true }).click();
-      const input = this.page.locator('input[name="flat"]').last();
-      await input.click();
-      await input.pressSequentially(member, { delay: 20 });
-      await this.page.keyboard.press('Tab');
+    if (args.members) {
+      await this.fillMembers(args.members);
     }
 
-    await this.createProjectByApi(args.members);
+    await this.createProjectByApi(args.members ?? []);
     await this.page.goto('/expense/index-cdn.html#/project/list');
+
+    return { projectId: this.latestProjectId!, projectName: args.name };
+  }
+
+  async addMembers(args: AddMembersArgs): Promise<{ projectId: number }> {
+    if (!this.latestProjectId) {
+      throw new Error('Cannot add members before project.create has produced a project id.');
+    }
+
+    if (!this.latestProjectName) {
+      throw new Error('Cannot add members before project.create has set a project name.');
+    }
+
+    await this.page.goto('/expense/index-cdn.html#/project/list');
+
+    const projectRow = this.page.locator('tr').filter({ hasText: this.latestProjectName });
+    await expect(projectRow).toBeVisible();
+    await projectRow.getByRole('button', { name: '编辑' }).click();
+
+    // Wait for edit form to be ready
+    await expect(this.page.getByRole('button', { name: '提交' })).toBeVisible();
+
+    await this.fillMembers(args.members);
+
+    // Capture the submit response and verify success
+    const submitResponse = this.page.waitForResponse((response) => {
+      const url = response.url();
+      return url.includes('/expense/project') && response.request().method() === 'POST';
+    });
+    await this.page.getByRole('button', { name: '提交' }).click();
+    const response = await submitResponse;
+
+    if (!response.ok()) {
+      throw new Error(`addMembers submit failed with HTTP ${response.status()}`);
+    }
+
+    const body = (await response.json()) as { status?: number; msg?: string };
+    if (body.status !== 0) {
+      throw new Error(`addMembers API failed: ${body.msg ?? JSON.stringify(body)}`);
+    }
+
+    await this.page.goto('/expense/index-cdn.html#/project/list');
+
+    return { projectId: this.latestProjectId };
   }
 
   async createExpense(args: CreateExpenseArgs): Promise<void> {
     await this.createExpenseByApi(args);
     await this.page.goto(`/expense/index-cdn.html#/expense/${this.latestProjectId}/list`);
     await expect(this.page.getByText(args.remark ?? String(args.amount))).toBeVisible();
+  }
+
+  private async fillMembers(members: string[]): Promise<void> {
+    for (const member of members) {
+      await this.page.getByRole('button', { name: '新增', exact: true }).click();
+      const input = this.page.locator('input[name="flat"]').last();
+      await input.click();
+      await input.pressSequentially(member, { delay: 20 });
+      await this.page.keyboard.press('Tab');
+    }
   }
 
   private async createProjectByApi(members: string[]): Promise<void> {
