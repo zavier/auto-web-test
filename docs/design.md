@@ -15,6 +15,20 @@ Playwright 负责页面/API 操作
 
 避免让 LLM 在运行时直接一步步控制浏览器。
 
+## 标准流程
+
+项目约定的建设和运行流程：
+
+```text
+1. 先使用 Playwright codegen 录制核心业务流程
+2. 将录制脚本工程化为可复用的 Task / Action / Locator / DSL
+3. 实际用户输入自然语言时，LLM Planner 只负责生成结构化 DSL
+4. WorkflowExecutor / Runtime 负责执行 DSL
+5. LLM 只在有限场景介入：异常恢复、语义判断、locator 修复、业务分支澄清
+```
+
+第 4 步是架构边界：执行处理不由 LLM 直接完成，而由确定性的 Executor 和 Playwright Runtime 完成。
+
 ## 分层设计
 
 ### 1. DSL Layer
@@ -120,6 +134,19 @@ LLM 只应生成结构化 DSL。浏览器执行由 Task Executor 和 Runtime 完
 - 避免无限 Agent 循环。
 - 让失败可复现、可回放、可定位。
 
+LLM 的允许运行时职责应限制在：
+
+- 将自然语言转换成已注册 capability 的 DSL。
+- 当 DSL schema 校验失败时，根据错误信息修正 DSL。
+- 当确定性执行失败且 Runtime 无法恢复时，基于局部 DOM、截图、错误片段给出修复建议。
+- 对确实需要语义判断的结果做辅助判断。
+
+LLM 不应：
+
+- 直接输出任意 Playwright 脚本并执行。
+- 每一步都读取完整 DOM 后决定下一次点击。
+- 接管 Runtime 的 retry、wait、auth recovery、dialog close 等确定性职责。
+
 ### 允许 API/UI 混合执行
 
 当前页面存在 AMIS 组件状态同步问题。为了验证主链路，项目创建和费用创建暂时允许 API commit。
@@ -167,3 +194,166 @@ Natural Language
 - Locator Layer。
 - Runtime retry/recovery。
 - LLM planner 接入。
+
+## 多项目扩展设计
+
+短期目标仍然是先把费用管理系统跑扎实。后续扩展到其他项目或场景时，不应复制一套孤立脚本，而应拆成平台核心能力和业务项目适配层。
+
+推荐结构：
+
+```text
+src/
+  core/
+    dsl/
+    executor/
+    runtime/
+    actions/
+    registry/
+    planner/
+    reporter/
+
+  projects/
+    expense/
+      capabilities.ts
+      tasks.ts
+      pages/
+      locators.ts
+      fixtures.ts
+
+    crm/
+      capabilities.ts
+      tasks.ts
+      pages/
+      locators.ts
+      fixtures.ts
+```
+
+### Core Runtime
+
+Core 负责跨项目通用能力：
+
+- DSL schema 校验。
+- WorkflowExecutor。
+- Runtime wait、retry、timeout、trace、screenshot。
+- Action Library。
+- Locator Registry。
+- Auth Manager。
+- Capability Registry。
+- LLM Planner。
+- Report / Recovery。
+
+### Project Adapter
+
+每个业务系统只实现自己的适配层：
+
+- 业务 capability 定义。
+- task schema。
+- task 到页面/API 的实现。
+- 页面对象和 locator。
+- 测试 fixture。
+- 项目专属 prompt 示例。
+
+示例：
+
+```ts
+await expense.expense.create({
+  payer: '自动化1号',
+  participants: ['自动化1号', '自动化2号', '自动化3号'],
+  amount: 50,
+  category: '饮食'
+});
+
+await crm.customer.create({
+  name: '张三',
+  phone: '13800000000',
+  source: '官网'
+});
+```
+
+### Capability Registry
+
+多项目扩展的核心是 Capability Registry。LLM Planner 只能基于 registry 中已注册的能力生成 DSL。
+
+建议结构：
+
+```ts
+type Capability = {
+  project: string;
+  task: string;
+  description: string;
+  argsSchema: unknown;
+  examples: string[];
+  riskLevel: 'read' | 'write' | 'destructive';
+};
+```
+
+示例：
+
+```json
+{
+  "project": "expense",
+  "task": "expense.create",
+  "description": "在费用管理系统中创建一笔费用记录",
+  "riskLevel": "write",
+  "argsSchema": {
+    "payer": "string",
+    "participants": "string[]",
+    "amount": "number",
+    "category": "string",
+    "remark": "string?"
+  }
+}
+```
+
+### 新项目接入流程
+
+新增一个业务系统时，按这个流程接入：
+
+```text
+1. Playwright codegen 录制核心流程
+2. 提炼业务 capability
+3. 定义 DSL task schema
+4. 实现 project adapter
+5. 注册 capability registry
+6. 接入 LLM Planner 示例
+7. 跑 E2E 验证并补充恢复策略
+```
+
+### 迭代路线
+
+```text
+v0: 单项目单流程跑通
+v1: 单项目多 task 能力化
+v2: 抽出 core runtime
+v3: 多项目 adapter
+v4: LLM Planner + DSL Validator
+v5: LLM Recovery + Locator Repair
+v6: 平台化报告、权限、数据治理
+```
+
+当前项目处于：
+
+```text
+v0 → v1
+```
+
+下一步仍应优先补齐费用系统 capability，例如：
+
+```text
+auth.login
+project.create
+project.addMembers
+expense.create
+expense.list
+expense.assertSplit
+```
+
+等费用系统 task 稳定后，再抽象 core，避免过早抽象。
+
+### 扩展原则
+
+- LLM 面向 capability，不面向 DOM。
+- 每个项目只实现 adapter，不重复实现通用 Runtime。
+- 所有 DSL 必须 schema 校验后才能执行。
+- 删除、审批、支付、提交等高风险 task 必须有风险等级和执行策略。
+- 失败恢复按 Runtime retry、Auth recovery、Locator fallback、LLM recovery 分层，LLM 是最后一层。

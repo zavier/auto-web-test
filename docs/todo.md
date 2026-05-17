@@ -43,6 +43,8 @@
 
 - 定义 Capability Registry，让 LLM 只能选择已注册 task。
 - 增加自然语言到 DSL 的离线转换脚本。
+- 明确 Planner 只输出 DSL，不直接输出 Playwright 操作。
+- 增加 planner prompt 中的职责边界说明：LLM 负责规划和有限恢复，Executor / Runtime 负责执行。
 - 增加 DSL 修正回路：
   - LLM 输出。
   - Schema 校验失败。
@@ -77,3 +79,21 @@
 - 增加 CI 命令。
 - 增加 Playwright HTML report 查看说明。
 - 增加测试环境隔离和数据命名规范。
+
+## P4：多项目扩展
+
+- 等费用系统 task 稳定后，将通用能力抽到 `src/core/`。
+- 将费用系统迁移为第一个 project adapter：`src/projects/expense/`。
+- 设计 `Capability` 类型和 Capability Registry。
+- 为新项目定义接入模板：
+  - `capabilities.ts`
+  - `tasks.ts`
+  - `pages/`
+  - `locators.ts`
+  - `fixtures.ts`
+- 增加跨项目测试目录结构：
+  - `tests/expense/`
+  - `tests/<project>/`
+  - `tests/planner/`
+- 为 capability 增加 `riskLevel`，区分 `read`、`write`、`destructive`。
+- 建立新项目接入流程文档：录制、提炼 capability、定义 DSL、实现 adapter、注册 registry、验证 E2E。

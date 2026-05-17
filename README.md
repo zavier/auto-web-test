@@ -12,6 +12,20 @@
 
 当前验证对象是费用管理系统：创建项目、添加成员、记录费用，并检查费用明细结果。
 
+## 标准工作流
+
+这个项目采用的完整流程是：
+
+```text
+1. 使用 Playwright codegen 录制核心业务流程
+2. 将录制脚本工程化为 Task / Action / Locator / DSL
+3. 用户输入自然语言时，LLM Planner 生成结构化 DSL
+4. WorkflowExecutor / Runtime 执行 DSL
+5. LLM 只在异常恢复、语义判断、locator 修复等少数场景介入
+```
+
+注意第 4 步不是“LLM 负责执行处理”。执行浏览器和业务动作的是确定性的 Executor / Runtime。LLM 的主要职责是规划和有限辅助恢复，避免系统退回到不稳定的“AI 浏览器 Agent”模式。
+
 ## 当前状态
 
 第一版最小闭环已经跑通：
@@ -87,3 +101,15 @@ docs/todo.md                后续任务清单
 - 新增费用 UI 下拉选择尚未固化为稳定 Action，当前用 API 完成费用提交，再回到页面验证结果。
 
 下一阶段重点是把这些 API 降级点逐步替换成稳定的 UI Action。
+
+## 扩展方向
+
+短期先聚焦费用系统，把当前 task 做扎实。后续如果扩展到其他项目或业务系统，推荐演进为：
+
+```text
+core runtime
++ project adapters
++ capability registry
+```
+
+通用执行、校验、恢复、报告能力放到 core；每个业务系统只实现自己的 capability、task、page、locator 和 fixture。详细方案见 [docs/design.md](docs/design.md) 的“多项目扩展设计”。

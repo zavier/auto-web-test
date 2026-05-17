@@ -36,6 +36,24 @@ project.addMembers(自动化1号, 自动化2号, 自动化3号)
 expense.create(自动化1号 支付 50 元饮食费用, 三人分摊, 备注 111)
 ```
 
+当前项目流程已确认：
+
+```text
+Playwright codegen 录制
+→ 工程化为 Task / Action / Locator / DSL
+→ LLM Planner 将用户提示转换成结构化 DSL
+→ WorkflowExecutor / Runtime 执行 DSL
+→ LLM 仅在少数异常恢复和语义判断场景介入
+```
+
+需要避免的错误方向：
+
+```text
+用户提示
+→ LLM 逐步控制浏览器
+→ 每一步都重新读页面并决策
+```
+
 ## 已发现事实
 
 ### 1. 系统 Chrome 可用
