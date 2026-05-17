@@ -130,6 +130,59 @@ export class ExpenseApp {
     }
   }
 
+  private async fillText(name: string, value: string): Promise<void> {
+    await this.page.locator(`input[name="${name}"]`).fill(value);
+  }
+
+  private async submitDialog(title = '提交'): Promise<void> {
+    await this.page.getByRole('button', { name: title }).click();
+  }
+
+  private async selectSingle(label: string, value: string): Promise<void> {
+    const group = this.page.locator('.cxd-Form-group, .cxd-Form-item').filter({ hasText: label });
+    const trigger = group.locator('.cxd-Select').first();
+
+    await trigger.scrollIntoViewIfNeeded();
+    await trigger.click();
+
+    const overlay = this.page.locator('.cxd-Overlay').last();
+    await expect(overlay).toBeVisible({ timeout: 5_000 });
+
+    const searchInput = overlay.locator('input').first();
+    const hasSearch = (await searchInput.count()) > 0;
+
+    if (hasSearch) {
+      await searchInput.pressSequentially(value, { delay: 20 });
+      await this.page.keyboard.press('Enter');
+    } else {
+      await overlay.getByText(value, { exact: true }).first().click();
+    }
+
+    await expect(overlay).not.toBeVisible({ timeout: 5_000 });
+
+    await expect(group.getByText(value, { exact: true })).toBeVisible({ timeout: 5_000 });
+  }
+
+  private async selectMultiple(label: string, values: string[]): Promise<void> {
+    const group = this.page.locator('.cxd-Form-group, .cxd-Form-item').filter({ hasText: label });
+    const trigger = group.locator('.cxd-Select').first();
+
+    await trigger.scrollIntoViewIfNeeded();
+    await trigger.click();
+
+    const overlay = this.page.locator('.cxd-Overlay').last();
+    await expect(overlay).toBeVisible({ timeout: 5_000 });
+
+    for (const value of values) {
+      const option = overlay.getByText(value, { exact: true }).first();
+      await option.click();
+      await expect(group.getByText(value, { exact: true })).toBeVisible({ timeout: 5_000 });
+    }
+
+    await this.page.keyboard.press('Escape');
+    await expect(overlay).not.toBeVisible({ timeout: 5_000 });
+  }
+
   private async createProjectByApi(members: string[]): Promise<void> {
     if (!this.authToken) {
       throw new Error('Cannot create project by API before auth.login has stored a token.');
@@ -230,25 +283,4 @@ export class ExpenseApp {
     }
   }
 
-  private async selectMultiple(label: string, values: string[]): Promise<void> {
-    const group = this.page.locator('.cxd-Form-group, .cxd-Form-item').filter({ hasText: label });
-    const trigger = group.locator('.cxd-Select').first();
-
-    await trigger.scrollIntoViewIfNeeded();
-    await trigger.click();
-
-    const overlay = this.page.locator('.cxd-Overlay').last();
-    await expect(overlay).toBeVisible({ timeout: 5_000 });
-
-    for (const value of values) {
-      const option = overlay.getByText(value, { exact: true }).first();
-      await option.click();
-      // Verify badge/tag appears in the form row after each selection
-      await expect(group.getByText(value, { exact: true })).toBeVisible({ timeout: 5_000 });
-    }
-
-    // Escape to close dropdown
-    await this.page.keyboard.press('Escape');
-    await expect(overlay).not.toBeVisible({ timeout: 5_000 });
-  }
 }
