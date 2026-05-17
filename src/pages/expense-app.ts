@@ -119,10 +119,14 @@ export class ExpenseApp {
       throw new Error('Cannot create expense before project.create has produced a project id.');
     }
 
-    await this.page.goto(`/expense/index-cdn.html#/expense/${this.latestProjectId}/list`);
+    // Navigate to project list and find the project row
+    await this.page.goto('/expense/index-cdn.html#/project/list');
+
+    const projectRow = this.page.locator('tr').filter({ hasText: this.latestProjectName });
+    await expect(projectRow).toBeVisible();
 
     // Open the expense creation dialog
-    await this.page.getByRole('button', { name: '新增' }).click();
+    await projectRow.getByRole('button', { name: '新增费用' }).click();
     await expect(this.page.getByRole('dialog')).toBeVisible({ timeout: 5_000 });
 
     await this.selectSingle('支付人', args.payer);
@@ -149,7 +153,8 @@ export class ExpenseApp {
       throw new Error(`expense create API failed: ${body.msg ?? JSON.stringify(body)}`);
     }
 
-    // Dialog closes on success, verify the new expense appears in the list
+    // Navigate to expense list to verify
+    await this.page.goto(`/expense/index-cdn.html#/expense/${this.latestProjectId}/list`);
     await expect(this.page.getByText(args.remark ?? String(args.amount))).toBeVisible();
   }
 
