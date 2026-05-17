@@ -115,17 +115,32 @@ export class ExpenseApp {
   }
 
   async createExpense(args: CreateExpenseArgs): Promise<void> {
-    await this.createExpenseByApi(args);
+    if (!this.latestProjectId || !this.latestProjectName) {
+      throw new Error('Cannot create expense before project.create has produced a project id.');
+    }
+
+    await this.page.goto(`/expense/index-cdn.html#/expense/${this.latestProjectId}/add`);
+
+    await this.selectSingle('支付人', args.payer);
+    await this.selectMultiple('使用人', args.participants);
+    await this.fillText('amount', String(args.amount));
+    await this.selectSingle('费用类型', args.category);
+    if (args.remark) {
+      await this.fillText('remark', args.remark);
+    }
+
+    await this.submitDialog('提交');
+
     await this.page.goto(`/expense/index-cdn.html#/expense/${this.latestProjectId}/list`);
     await expect(this.page.getByText(args.remark ?? String(args.amount))).toBeVisible();
   }
 
   private async fillInputArray(_label: string, values: string[]): Promise<void> {
-    for (const member of values) {
+    for (const value of values) {
       await this.page.getByRole('button', { name: '新增', exact: true }).click();
       const input = this.page.locator('input[name="flat"]').last();
       await input.click();
-      await input.pressSequentially(member, { delay: 20 });
+      await input.pressSequentially(value, { delay: 20 });
       await this.page.keyboard.press('Tab');
     }
   }
@@ -211,13 +226,6 @@ export class ExpenseApp {
     this.latestProjectId = await this.findProjectIdByName(this.latestProjectName);
   }
 
-  private async selectFirstVisibleOption(triggerText: string, optionText: string): Promise<void> {
-    await this.page.getByText(triggerText).first().click();
-    const option = this.page.getByText(optionText, { exact: true }).last();
-    await expect(option).toBeVisible();
-    await option.click();
-  }
-
   private async findProjectIdByName(projectName: string): Promise<number> {
     if (!this.authToken) {
       throw new Error('Cannot query project list before auth.login has stored a token.');
@@ -252,35 +260,5 @@ export class ExpenseApp {
     return project.projectId;
   }
 
-  private async createExpenseByApi(args: CreateExpenseArgs): Promise<void> {
-    if (!this.authToken) {
-      throw new Error('Cannot create expense by API before auth.login has stored a token.');
-    }
-
-    if (!this.latestProjectId || !this.latestProjectName) {
-      throw new Error('Cannot create expense before project.create has produced a project id.');
-    }
-
-    const response = await this.page.request.post('https://zhengw-tech.com/expense/project/addRecord', {
-      headers: {
-        Authorization: this.authToken
-      },
-      data: {
-        projectId: this.latestProjectId,
-        projectName: this.latestProjectName,
-        payMember: args.payer,
-        consumerMembers: args.participants,
-        amount: args.amount,
-        date: Math.floor(Date.now() / 1000),
-        expenseType: args.category,
-        remark: args.remark ?? ''
-      }
-    });
-    const body = (await response.json()) as { status: number; msg?: string };
-
-    if (body.status !== 0) {
-      throw new Error(`Expense API create failed: ${body.msg ?? JSON.stringify(body)}`);
-    }
-  }
 
 }
