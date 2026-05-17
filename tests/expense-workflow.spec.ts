@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import { test } from '@playwright/test';
 import { sampleExpenseWorkflow } from '../src/dsl.js';
 import { WorkflowExecutor } from '../src/executor.js';
