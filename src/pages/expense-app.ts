@@ -130,6 +130,14 @@ export class ExpenseApp {
     }
   }
 
+  private async fillText(name: string, value: string): Promise<void> {
+    await this.page.locator(`input[name="${name}"]`).fill(value);
+  }
+
+  private async submitDialog(title = '提交'): Promise<void> {
+    await this.page.getByRole('button', { name: title }).click();
+  }
+
   private async createProjectByApi(members: string[]): Promise<void> {
     if (!this.authToken) {
       throw new Error('Cannot create project by API before auth.login has stored a token.');
