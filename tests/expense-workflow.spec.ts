@@ -9,6 +9,9 @@ test('expense workflow can be executed from structured DSL', async ({ page }) =>
 
   const result = await executor.run(workflow);
 
+  if (!result.success) {
+    console.error('Workflow failed:', JSON.stringify(result.logs, null, 2));
+  }
   expect(result.success).toBe(true);
   expect(result.outputs.projectId).toBeDefined();
   expect(result.outputs.projectName).toBeDefined();

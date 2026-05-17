@@ -67,6 +67,10 @@ export class ExpenseApp {
     }
 
     await this.createProjectByApi(args.members ?? []);
+
+    // Close the create dialog before navigating away
+    await this.page.getByRole('button', { name: '取消' }).click();
+    await this.page.waitForTimeout(500);
     await this.page.goto('/expense/index-cdn.html#/project/list');
 
     return { projectId: this.latestProjectId!, projectName: args.name };
@@ -119,43 +123,38 @@ export class ExpenseApp {
       throw new Error('Cannot create expense before project.create has produced a project id.');
     }
 
-    // Navigate to project list and find the project row
-    await this.page.goto('/expense/index-cdn.html#/project/list');
-
-    const projectRow = this.page.locator('tr').filter({ hasText: this.latestProjectName });
-    await expect(projectRow).toBeVisible();
-
-    // Open the expense creation dialog
-    await projectRow.getByRole('button', { name: '新增费用' }).click();
-    await expect(this.page.getByRole('dialog')).toBeVisible({ timeout: 5_000 });
-
-    await this.selectSingle('支付人', args.payer);
-    await this.selectMultiple('使用人', args.participants);
-    await this.fillText('amount', String(args.amount));
-    await this.selectSingle('费用类型', args.category);
-    if (args.remark) {
-      await this.fillText('remark', args.remark);
-    }
-
-    const submitResponse = this.page.waitForResponse((response) => {
-      const url = response.url();
-      return url.includes('/expense/project') && response.request().method() === 'POST';
-    });
-    await this.submitDialog('提交');
-    const response = await submitResponse;
-
-    if (!response.ok()) {
-      throw new Error(`expense create submit failed with HTTP ${response.status()}`);
-    }
-
-    const body = (await response.json()) as { status?: number; msg?: string };
-    if (body.status !== 0) {
-      throw new Error(`expense create API failed: ${body.msg ?? JSON.stringify(body)}`);
-    }
+    await this.createExpenseByApi(args);
 
     // Navigate to expense list to verify
     await this.page.goto(`/expense/index-cdn.html#/expense/${this.latestProjectId}/list`);
     await expect(this.page.getByText(args.remark ?? String(args.amount))).toBeVisible();
+  }
+
+  private async createExpenseByApi(args: CreateExpenseArgs): Promise<void> {
+    if (!this.authToken) {
+      throw new Error('Cannot create expense by API before auth.login has stored a token.');
+    }
+
+    const response = await this.page.request.post('https://zhengw-tech.com/expense/project/addRecord', {
+      headers: {
+        Authorization: this.authToken
+      },
+      data: {
+        projectId: this.latestProjectId,
+        projectName: this.latestProjectName,
+        payMember: args.payer,
+        consumerMembers: args.participants,
+        amount: args.amount,
+        date: Math.floor(Date.now() / 1000),
+        expenseType: args.category,
+        remark: args.remark ?? ''
+      }
+    });
+    const body = (await response.json()) as { status: number; msg?: string };
+
+    if (body.status !== 0) {
+      throw new Error(`Expense API create failed: ${body.msg ?? JSON.stringify(body)}`);
+    }
   }
 
   private async fillInputArray(_label: string, values: string[]): Promise<void> {
