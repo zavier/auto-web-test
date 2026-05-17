@@ -63,7 +63,7 @@ export class ExpenseApp {
     await this.page.locator('input[name="projectDesc"]').fill(args.description ?? '');
 
     if (args.members) {
-      await this.fillMembers(args.members);
+      await this.fillInputArray('成员', args.members);
     }
 
     await this.createProjectByApi(args.members ?? []);
@@ -90,7 +90,7 @@ export class ExpenseApp {
     // Wait for edit form to be ready
     await expect(this.page.getByRole('button', { name: '提交' })).toBeVisible();
 
-    await this.fillMembers(args.members);
+    await this.fillInputArray('成员', args.members);
 
     // Capture the submit response and verify success
     const submitResponse = this.page.waitForResponse((response) => {
@@ -120,8 +120,8 @@ export class ExpenseApp {
     await expect(this.page.getByText(args.remark ?? String(args.amount))).toBeVisible();
   }
 
-  private async fillMembers(members: string[]): Promise<void> {
-    for (const member of members) {
+  private async fillInputArray(_label: string, values: string[]): Promise<void> {
+    for (const member of values) {
       await this.page.getByRole('button', { name: '新增', exact: true }).click();
       const input = this.page.locator('input[name="flat"]').last();
       await input.click();
