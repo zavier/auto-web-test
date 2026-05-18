@@ -39,27 +39,29 @@ console.assert(Array.isArray(members) && members[0] === 'A');
 const nested = resolvedE[0].args.nested;
 console.assert(typeof nested === 'object' && nested !== null && (nested as Record<string, unknown>).x === 100);
 
-// Test F: undefined scoped variable throws TemplateError
-let threwF = false;
-try {
-  TemplateEngine.resolve([{ task: 'auth.login', args: { x: '${env.MISSING}' } }], baseContext);
-} catch (e) {
-  threwF = true;
-  console.assert(e instanceof Error && e.name === 'TemplateError', 'Expected TemplateError');
-  console.assert((e as Error).message.includes('MISSING'), 'Error should mention MISSING');
+function assertThrowsTemplateError(fn: () => void, expectedInMessage: string): void {
+  let threw = false;
+  try {
+    fn();
+  } catch (e) {
+    threw = true;
+    console.assert(e instanceof TemplateError, `Expected TemplateError, got ${e}`);
+    console.assert(e instanceof Error && e.message.includes(expectedInMessage), `Message should include ${expectedInMessage}`);
+  }
+  console.assert(threw, 'Expected TemplateError to be thrown');
 }
-console.assert(threwF, 'Expected TemplateError for missing env variable');
+
+// Test F: undefined scoped variable throws TemplateError
+assertThrowsTemplateError(
+  () => TemplateEngine.resolve([{ task: 'auth.login', args: { x: '${env.MISSING}' } }], baseContext),
+  'MISSING'
+);
 
 // Test G: undefined unscoped variable throws TemplateError
-let threwG = false;
-try {
-  TemplateEngine.resolve([{ task: 'auth.login', args: { x: '${missingVar}' } }], baseContext);
-} catch (e) {
-  threwG = true;
-  console.assert(e instanceof Error && e.name === 'TemplateError', 'Expected TemplateError');
-  console.assert((e as Error).message.includes('missingVar'), 'Error should mention missingVar');
-}
-console.assert(threwG, 'Expected TemplateError for missing unscoped variable');
+assertThrowsTemplateError(
+  () => TemplateEngine.resolve([{ task: 'auth.login', args: { x: '${missingVar}' } }], baseContext),
+  'missingVar'
+);
 
 // Test H: empty workflow returns empty array
 const resolvedH = TemplateEngine.resolve([], baseContext);
