@@ -1,5 +1,5 @@
 import { WorkflowParameterizer } from '../../src/core/recorder/parameterizer.js';
-import { defaultRules } from '../../src/core/recorder/rules.js';
+import { defaultRules } from '../../src/projects/expense/recorder-rules.js';
 
 const recorded = [
   {
