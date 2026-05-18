@@ -6,6 +6,7 @@ import { ExpenseApp } from './pages/expense-app.js';
 import { TemplateEngine } from './core/template/engine.js';
 import { buildContext } from './core/template/context.js';
 import type { VariableContext } from './core/template/types.js';
+import type { TemplateWorkflow } from './core/template/types.js';
 
 export class WorkflowExecutor {
   private readonly app: ExpenseApp;
@@ -15,7 +16,7 @@ export class WorkflowExecutor {
   }
 
   async run(
-    workflow: Workflow,
+    workflow: Workflow | TemplateWorkflow,
     options?: { context?: Partial<VariableContext> }
   ): Promise<WorkflowResult> {
     const hasTemplate = JSON.stringify(workflow).includes('${');

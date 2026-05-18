@@ -1,6 +1,12 @@
 import { WorkflowParameterizer } from '../../src/core/recorder/parameterizer.js';
 import { defaultRules } from '../../src/projects/expense/recorder-rules.js';
 
+function assert(condition: unknown, message = 'unknown'): void {
+  if (!condition) {
+    throw new Error(`Assertion failed: ${message}`);
+  }
+}
+
 const recorded = [
   {
     task: 'auth.login',
@@ -20,25 +26,25 @@ const parameterizer = new WorkflowParameterizer(defaultRules);
 const { template, mapping } = parameterizer.parameterize(recorded as any);
 
 // Verify username and password are parameterized
-console.assert(template[0].args.username === '${env.EXPENSE_USERNAME}');
-console.assert(template[0].args.password === '${env.EXPENSE_PASSWORD}');
+assert(template[0].args.username === '${env.EXPENSE_USERNAME}');
+assert(template[0].args.password === '${env.EXPENSE_PASSWORD}');
 
 // Verify project name is parameterized
-console.assert(template[1].args.name === '${input.projectName}');
+assert(template[1].args.name === '${input.projectName}');
 
 // Verify amount, category, remark are parameterized
-console.assert(template[2].args.amount === '${input.amount}');
-console.assert(template[2].args.category === '${input.category}');
-console.assert(template[2].args.remark === '${input.remark}');
+assert(template[2].args.amount === '${input.amount}');
+assert(template[2].args.category === '${input.category}');
+assert(template[2].args.remark === '${input.remark}');
 
 // Verify non-matching fields remain unchanged
-console.assert(template[1].args.description === '');
-console.assert(template[2].args.payer === '张三');
+assert(template[1].args.description === '');
+assert(template[2].args.payer === '张三');
 
 // Verify mapping output
-console.assert(mapping.length >= 6, `Expected at least 6 mappings, got ${mapping.length}`);
+assert(mapping.length >= 6, `Expected at least 6 mappings, got ${mapping.length}`);
 const usernameMapping = mapping.find((m) => m.field === 'username' && m.task === 'auth.login');
-console.assert(usernameMapping?.originalValue === 'zhangsan');
-console.assert(usernameMapping?.placeholder === '${env.EXPENSE_USERNAME}');
+assert(usernameMapping?.originalValue === 'zhangsan');
+assert(usernameMapping?.placeholder === '${env.EXPENSE_USERNAME}');
 
 console.log('All parameterizer tests passed');
