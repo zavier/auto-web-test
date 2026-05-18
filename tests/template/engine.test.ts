@@ -39,21 +39,26 @@ console.assert(Array.isArray(members) && members[0] === 'A');
 const nested = resolvedE[0].args.nested;
 console.assert(typeof nested === 'object' && nested !== null && (nested as Record<string, unknown>).x === 100);
 
-// Test F: missing scoped variable throws TemplateError
+// Test F: undefined scoped variable throws TemplateError
+let threwF = false;
 try {
-  TemplateEngine.resolve([{ task: 'auth.login', args: { username: '${env.MISSING}' } }], baseContext);
-  console.assert(false, 'Expected TemplateError for missing scoped variable');
-} catch (err) {
-  console.assert(err instanceof TemplateError);
+  TemplateEngine.resolve([{ task: 'auth.login', args: { x: '${env.MISSING}' } }], baseContext);
+} catch (e) {
+  threwF = true;
+  console.assert(e instanceof Error && e.name === 'TemplateError', 'Expected TemplateError');
+  console.assert((e as Error).message.includes('MISSING'), 'Error should mention MISSING');
 }
+console.assert(threwF, 'Expected TemplateError for missing env variable');
 
-// Test G: missing unscoped variable throws TemplateError
+// Test G: undefined unscoped variable throws TemplateError
+let threwG = false;
 try {
-  TemplateEngine.resolve([{ task: 'auth.login', args: { username: '${missingVar}' } }], baseContext);
-  console.assert(false, 'Expected TemplateError for missing unscoped variable');
-} catch (err) {
-  console.assert(err instanceof TemplateError);
+  TemplateEngine.resolve([{ task: 'auth.login', args: { x: '${missingVar}' } }], baseContext);
+} catch (e) {
+  threwG = true;
+  console.assert((e as Error).message.includes('missingVar'), 'Error should mention missingVar');
 }
+console.assert(threwG, 'Expected TemplateError for missing unscoped variable');
 
 // Test H: empty workflow returns empty array
 const resolvedH = TemplateEngine.resolve([], baseContext);
