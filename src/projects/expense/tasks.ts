@@ -1,7 +1,5 @@
 import { z } from 'zod';
 
-export type { TaskOutput, TaskLog, WorkflowResult } from './core/dsl/types.js';
-
 const AuthLoginTask = z.object({
   task: z.literal('auth.login').describe('登录费用管理系统'),
   args: z.object({
@@ -27,7 +25,7 @@ const ProjectAddMembersTask = z.object({
 });
 
 const ExpenseCreateTask = z.object({
-  task: z.literal('expense.create').describe('在项目中创建一笔费用记录，包含支付人、参与人、金额、类别'),
+  task: z.literal('expense.create').describe('在项目中创建一笔费用记录'),
   args: z.object({
     payer: z.string().min(1).describe('支付人姓名'),
     participants: z.array(z.string().min(1)).min(1).describe('参与分摊的人员姓名列表'),
@@ -48,31 +46,3 @@ export const WorkflowSchema = z.array(WorkflowTaskSchema);
 
 export type WorkflowTask = z.infer<typeof WorkflowTaskSchema>;
 export type Workflow = z.infer<typeof WorkflowSchema>;
-
-export const sampleExpenseWorkflow = (suffix = Date.now().toString()): Workflow => [
-  {
-    task: 'auth.login',
-    args: {
-      username: process.env.EXPENSE_USERNAME ?? '',
-      password: process.env.EXPENSE_PASSWORD ?? '',
-    },
-  },
-  {
-    task: 'project.create',
-    args: {
-      name: `测试自动化项目 ${suffix}`,
-      description: '这是测试自动化的项目',
-      members: ['自动化1号', '自动化2号', '自动化3号'],
-    },
-  },
-  {
-    task: 'expense.create',
-    args: {
-      payer: '自动化1号',
-      participants: ['自动化1号', '自动化2号', '自动化3号'],
-      amount: 50,
-      category: '饮食',
-      remark: '111',
-    },
-  },
-];

@@ -1,6 +1,7 @@
 import type { Page } from '@playwright/test';
-import type { Workflow, WorkflowTask, TaskOutput, WorkflowResult, TaskLog } from './dsl.js';
+import type { Workflow, WorkflowTask, TaskOutput } from './dsl.js';
 import { WorkflowSchema } from './dsl.js';
+import type { WorkflowResult, TaskLog } from './core/dsl/types.js';
 import { ExpenseApp } from './pages/expense-app.js';
 
 export class WorkflowExecutor {

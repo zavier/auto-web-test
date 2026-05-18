@@ -13,5 +13,8 @@
     "dotenv": "^17.4.2",
     "typescript": "^5.9.0",
     "zod": "^4.4.3"
+  },
+  "dependencies": {
+    "openai": "^6.38.0"
   }
 }
