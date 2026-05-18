@@ -30,6 +30,13 @@ console.assert(ctx3.input.suffix === 1);
 console.assert((ctx3.output.projectCreate as Record<string, unknown>).projectId === 99);
 console.assert((ctx3.global.members as string[])[0] === 'a');
 
+// Test withEnv filters undefined
+const builderWithUndefined = new VariableContextBuilder()
+  .withEnv({ FOO: 'bar', BAR: undefined });
+const ctxWithUndefined = builderWithUndefined.build();
+console.assert(ctxWithUndefined.env.FOO === 'bar');
+console.assert(!('BAR' in ctxWithUndefined.env), 'BAR should be filtered out');
+
 // Test withOutput accumulates
 const builder2 = new VariableContextBuilder()
   .withOutput('projectCreate', { projectId: 1 })
