@@ -1,10 +1,10 @@
-import { createPlanner } from './planner.js';
-import type { Workflow } from '../dsl.js';
+import { createPlanner } from '../core/planner/planner.js';
+import { getCapabilities } from '../core/planner/registry.js';
+import { WorkflowSchema, WorkflowTaskSchema } from '../dsl.js';
 
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
 
-  // Parse --model flag
   let model: string | undefined;
   let input: string | undefined;
   for (let i = 0; i < args.length; i++) {
@@ -17,7 +17,9 @@ async function main(): Promise<void> {
   }
 
   if (!input) {
-    process.stderr.write('Usage: npx tsx src/planner/cli.ts [--model <model>] "<natural language>"\n');
+    process.stderr.write(
+      'Usage: npx tsx src/planner/cli.ts [--model <model>] "<natural language>"\n'
+    );
     process.exit(1);
   }
 
@@ -27,10 +29,11 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
-  const planner = createPlanner({ openaiApiKey: apiKey, model });
+  const capabilities = getCapabilities(WorkflowTaskSchema, 'expense');
+  const planner = createPlanner({ openaiApiKey: apiKey, model }, capabilities, WorkflowSchema);
 
   try {
-    const workflow: Workflow = await planner.plan(input);
+    const workflow = await planner.plan(input);
     process.stdout.write(JSON.stringify(workflow, null, 2) + '\n');
     process.exit(0);
   } catch (error) {
