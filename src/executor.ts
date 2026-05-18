@@ -3,6 +3,9 @@ import type { Workflow, WorkflowTask, TaskOutput } from './dsl.js';
 import { WorkflowSchema } from './dsl.js';
 import type { WorkflowResult, TaskLog } from './core/dsl/types.js';
 import { ExpenseApp } from './pages/expense-app.js';
+import { TemplateEngine } from './core/template/engine.js';
+import { buildContext } from './core/template/context.js';
+import type { VariableContext } from './core/template/types.js';
 
 export class WorkflowExecutor {
   private readonly app: ExpenseApp;
@@ -11,8 +14,16 @@ export class WorkflowExecutor {
     this.app = new ExpenseApp(page);
   }
 
-  async run(workflow: Workflow): Promise<WorkflowResult> {
-    const parseResult = WorkflowSchema.safeParse(workflow);
+  async run(
+    workflow: Workflow,
+    options?: { context?: Partial<VariableContext> }
+  ): Promise<WorkflowResult> {
+    const hasTemplate = JSON.stringify(workflow).includes('${');
+    const resolved = hasTemplate
+      ? TemplateEngine.resolve(workflow, buildContext(options?.context))
+      : workflow;
+
+    const parseResult = WorkflowSchema.safeParse(resolved);
     if (!parseResult.success) {
       throw new Error(`DSL validation failed: ${parseResult.error.message}`);
     }
