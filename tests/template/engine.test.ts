@@ -56,6 +56,7 @@ try {
   TemplateEngine.resolve([{ task: 'auth.login', args: { x: '${missingVar}' } }], baseContext);
 } catch (e) {
   threwG = true;
+  console.assert(e instanceof Error && e.name === 'TemplateError', 'Expected TemplateError');
   console.assert((e as Error).message.includes('missingVar'), 'Error should mention missingVar');
 }
 console.assert(threwG, 'Expected TemplateError for missing unscoped variable');
