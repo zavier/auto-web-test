@@ -2,7 +2,7 @@
 
 ## 目标
 
-验证一种“AI 规划 + 确定性执行”的 Web 自动化测试工作流。
+验证一种"AI 规划 + 确定性执行"的 Web 自动化测试工作流。
 
 核心原则：
 
@@ -17,8 +17,6 @@ Playwright 负责页面/API 操作
 
 ## 标准流程
 
-项目约定的建设和运行流程：
-
 ```text
 1. 先使用 Playwright codegen 录制核心业务流程
 2. 将录制脚本工程化为可复用的 Task / Action / Locator / DSL
@@ -27,333 +25,183 @@ Playwright 负责页面/API 操作
 5. LLM 只在有限场景介入：异常恢复、语义判断、locator 修复、业务分支澄清
 ```
 
-第 4 步是架构边界：执行处理不由 LLM 直接完成，而由确定性的 Executor 和 Playwright Runtime 完成。
+## 当前架构
 
-## 分层设计
+```text
+src/
+  core/                      ← 通用层（跨项目复用）
+    dsl/
+      types.ts               — TaskLog, WorkflowResult, TaskOutput
+    planner/
+      types.ts               — Capability, ProjectAdapter, ArgMeta
+      registry.ts            — 从 zod schema 提取 capability
+      planner.ts             — OpenAI 调用 + prompt + 修正回路
+      cli.ts                 — 通用 CLI stub
+    capability-registry.ts   — 聚合所有 adapter 的 CapabilityRegistry
+
+  projects/                  ← 业务适配层
+    expense/
+      tasks.ts               — zod schema（AuthLoginTask, ProjectCreateTask...）
+      capabilities.ts        — capability 注册
+      pages/
+        expense-app.ts       — Runtime 实现
+
+  dsl.ts                     — 兼容层：re-export core 类型 + 费用系统 schema
+  executor.ts                — 兼容层：费用系统 WorkflowExecutor
+  planner/
+    cli.ts                   — 费用系统特定 CLI
+    registry.ts              — 旧 registry（待清理）
+    planner.ts               — 旧 planner（待清理）
+
+tests/
+  planner/
+    registry.test.ts         — Capability Registry 测试
+    planner.test.ts          — Planner 测试
+  expense/
+    workflow.spec.ts         — 费用系统 E2E 测试
+```
 
 ### 1. DSL Layer
 
-位置：`src/dsl.ts`
+位置：`src/core/dsl/types.ts`、`src/projects/expense/tasks.ts`
 
-DSL 表达业务任务，而不是页面点击细节。
+- `core/dsl` 提供通用类型（`TaskLog`、`WorkflowResult`）
+- 每个 adapter 定义自己的 task schema（zod）
+- zod schema 上使用 `.describe()` 为 LLM Planner 提供元数据
 
-当前支持：
+### 2. Capability Registry
 
-```text
-auth.login
-project.create
-project.addMembers
-expense.create
+位置：`src/core/planner/registry.ts`
+
+从 zod schema 自动提取：
+- task 名和描述
+- 每个 arg 的名称、类型、是否必填、描述
+- `project` 标识和 `riskLevel`
+
+```ts
+export function getCapabilities(
+  workflowTaskSchema: ZodType,
+  projectName: string
+): Capability[]
 ```
 
-示例：
+### 3. Planner Layer
 
-```json
-[
-  {
-    "task": "project.create",
-    "args": {
-      "name": "测试自动化项目 1779021649",
-      "description": "这是测试自动化的项目"
-    }
-  },
-  {
-    "task": "expense.create",
-    "args": {
-      "payer": "自动化1号",
-      "participants": ["自动化1号", "自动化2号", "自动化3号"],
-      "amount": 50,
-      "category": "饮食",
-      "remark": "111"
-    }
-  }
-]
-```
+位置：`src/core/planner/planner.ts`
 
-后续应补充 schema validator，例如 `zod` 或 JSON Schema，保证 LLM 输出不能越权执行。
+- 通用 `createPlanner(config, capabilities, schema)`
+- prompt 动态构建自传入的 `capabilities`
+- `response_format: { type: 'json_object' }` 约束输出
+- 最多 3 轮 DSL 修正回路
 
-### 2. Executor Layer
+### 4. Executor Layer
 
 位置：`src/executor.ts`
 
-职责：
+当前还是费用系统特定的 Executor，从 core 导入通用类型。
 
-- 顺序执行 DSL task。
-- 将 task 路由到页面业务能力。
-- 对未知 task 做编译期 `never` 穷尽检查。
+### 5. Runtime / Page Task Layer
 
-当前还是线性执行，后续可扩展：
-
-- 条件分支。
-- retry policy。
-- task 输出传递。
-- 执行报告。
-
-### 3. Runtime / Page Task Layer
-
-位置：`src/pages/expense-app.ts`
-
-职责：
-
-- 登录、创建项目、添加成员、创建费用这些业务能力封装。
-- 处理认证 token。
-- 根据页面真实行为选择 UI 或 API 执行策略。
-- 做页面断言。
+位置：`src/pages/expense-app.ts`（待迁移到 `src/projects/expense/pages/`）
 
 当前采用混合策略：
 
 ```text
 auth.login: UI 登录 + 捕获 JWT + 注入 Authorization header
-project.create: UI 填写项目基本信息
-project.addMembers: UI 填写成员以验证可操作性 + API commit 创建项目
+project.create: UI 填写项目基本信息 + API commit
+project.addMembers: UI 填写成员以验证可操作性 + API commit
 expense.create: API commit 创建费用 + 跳转费用明细页断言
 ```
 
-### 4. Playwright Layer
+### 6. Playwright Layer
 
-位置：`playwright.config.ts`、`tests/expense-workflow.spec.ts`
+位置：`playwright.config.ts`、`tests/`
 
 配置要点：
-
-- 使用系统 Chrome：`channel: 'chrome'`。
-- `trace: 'retain-on-failure'`。
-- `screenshot: 'only-on-failure'`。
-- `video: 'retain-on-failure'`。
-
-测试入口只负责构造 DSL 和调用 Executor。
+- 使用系统 Chrome：`channel: 'chrome'`
+- `trace: 'retain-on-failure'`
+- `screenshot: 'only-on-failure'`
+- `video: 'retain-on-failure'`
 
 ## 当前关键决策
 
 ### LLM 不直接控制浏览器
 
-LLM 只应生成结构化 DSL。浏览器执行由 Task Executor 和 Runtime 完成。
+LLM 只生成结构化 DSL。浏览器执行由 Task Executor 和 Runtime 完成。
 
-原因：
-
-- 降低 token 消耗。
-- 避免无限 Agent 循环。
-- 让失败可复现、可回放、可定位。
-
-LLM 的允许运行时职责应限制在：
-
-- 将自然语言转换成已注册 capability 的 DSL。
-- 当 DSL schema 校验失败时，根据错误信息修正 DSL。
-- 当确定性执行失败且 Runtime 无法恢复时，基于局部 DOM、截图、错误片段给出修复建议。
-- 对确实需要语义判断的结果做辅助判断。
+LLM 的允许运行时职责：
+- 将自然语言转换成已注册 capability 的 DSL
+- 当 DSL schema 校验失败时，根据错误信息修正 DSL
+- 当确定性执行失败且 Runtime 无法恢复时，给出修复建议
+- 对需要语义判断的结果做辅助判断
 
 LLM 不应：
-
-- 直接输出任意 Playwright 脚本并执行。
-- 每一步都读取完整 DOM 后决定下一次点击。
-- 接管 Runtime 的 retry、wait、auth recovery、dialog close 等确定性职责。
+- 直接输出任意 Playwright 脚本并执行
+- 每一步都读取完整 DOM 后决定下一次点击
+- 接管 Runtime 的 retry、wait、auth recovery 等确定性职责
 
 ### 允许 API/UI 混合执行
 
-当前页面存在 AMIS 组件状态同步问题。为了验证主链路，项目创建和费用创建暂时允许 API commit。
+当前页面存在 AMIS 组件状态同步问题。项目创建和费用创建暂时允许 API commit。
 
-这不是最终目标，而是 v0 验证策略：
-
+这不是最终目标：
 ```text
 先证明 DSL → Executor → 业务结果可闭环
 再逐步把 API commit 替换为稳定 UI Action
 ```
 
-### 任务输出比页面可见性更可靠
+### 新项目接入（3 个文件）
 
-新建项目不一定出现在第一页，所以不应断言“项目名在当前页可见”。当前以接口查询得到 `projectId` 作为后续任务上下文。
+每个新项目最少需要：
 
-后续应把 task output 明确建模，例如：
+1. **`tasks.ts`** — zod schema 定义
+2. **`capabilities.ts`** — Capability 列表注册
+3. **`pages/<project>-app.ts`** — Runtime 实现
 
-```ts
-type ProjectCreateOutput = {
-  projectId: number;
-  projectName: string;
-};
-```
-
-## 后续目标架构
-
+接入流程：
 ```text
-Natural Language
-→ LLM Planner
-→ Typed DSL
-→ DSL Validator
-→ Workflow Engine
-→ Task Executor
-→ Page Object / Action Library
-→ Locator Registry
-→ Playwright Runtime
-→ Report / Trace / Recovery
+1. Playwright codegen 录制核心流程
+2. 创建 src/projects/<name>/ 目录
+3. 写 tasks.ts 定义 task schema
+4. 写 capabilities.ts 注册 capability
+5. 写 pages/<name>-app.ts 实现 Runtime
+6. 注册到 CapabilityRegistry
+7. 写 E2E 测试
+8. 跑通后补充恢复策略
 ```
 
-需要逐步补齐：
-
-- Capability Registry。
-- DSL schema 校验。
-- Action Layer。
-- Locator Layer。
-- Runtime retry/recovery。
-- LLM planner 接入。
-
-## 多项目扩展设计
-
-短期目标仍然是先把费用管理系统跑扎实。后续扩展到其他项目或场景时，不应复制一套孤立脚本，而应拆成平台核心能力和业务项目适配层。
-
-推荐结构：
-
-```text
-src/
-  core/
-    dsl/
-    executor/
-    runtime/
-    actions/
-    registry/
-    planner/
-    reporter/
-
-  projects/
-    expense/
-      capabilities.ts
-      tasks.ts
-      pages/
-      locators.ts
-      fixtures.ts
-
-    crm/
-      capabilities.ts
-      tasks.ts
-      pages/
-      locators.ts
-      fixtures.ts
-```
-
-### Core Runtime
-
-Core 负责跨项目通用能力：
-
-- DSL schema 校验。
-- WorkflowExecutor。
-- Runtime wait、retry、timeout、trace、screenshot。
-- Action Library。
-- Locator Registry。
-- Auth Manager。
-- Capability Registry。
-- LLM Planner。
-- Report / Recovery。
-
-### Project Adapter
-
-每个业务系统只实现自己的适配层：
-
-- 业务 capability 定义。
-- task schema。
-- task 到页面/API 的实现。
-- 页面对象和 locator。
-- 测试 fixture。
-- 项目专属 prompt 示例。
-
-示例：
-
-```ts
-await expense.expense.create({
-  payer: '自动化1号',
-  participants: ['自动化1号', '自动化2号', '自动化3号'],
-  amount: 50,
-  category: '饮食'
-});
-
-await crm.customer.create({
-  name: '张三',
-  phone: '13800000000',
-  source: '官网'
-});
-```
-
-### Capability Registry
-
-多项目扩展的核心是 Capability Registry。LLM Planner 只能基于 registry 中已注册的能力生成 DSL。
-
-建议结构：
+## Capability 类型
 
 ```ts
 type Capability = {
   project: string;
   task: string;
   description: string;
-  argsSchema: unknown;
-  examples: string[];
+  args: ArgMeta[];
   riskLevel: 'read' | 'write' | 'destructive';
 };
 ```
 
-示例：
+`riskLevel` 仅在 Planner prompt 中提示（标记 `[高风险]`），不阻止执行。
 
-```json
-{
-  "project": "expense",
-  "task": "expense.create",
-  "description": "在费用管理系统中创建一笔费用记录",
-  "riskLevel": "write",
-  "argsSchema": {
-    "payer": "string",
-    "participants": "string[]",
-    "amount": "number",
-    "category": "string",
-    "remark": "string?"
-  }
-}
-```
-
-### 新项目接入流程
-
-新增一个业务系统时，按这个流程接入：
+## 迭代路线
 
 ```text
-1. Playwright codegen 录制核心流程
-2. 提炼业务 capability
-3. 定义 DSL task schema
-4. 实现 project adapter
-5. 注册 capability registry
-6. 接入 LLM Planner 示例
-7. 跑 E2E 验证并补充恢复策略
-```
-
-### 迭代路线
-
-```text
-v0: 单项目单流程跑通
-v1: 单项目多 task 能力化
-v2: 抽出 core runtime
-v3: 多项目 adapter
-v4: LLM Planner + DSL Validator
+v0: 单项目单流程跑通        ✅
+v1: 单项目多 task 能力化     ✅
+v2: 抽出 core runtime        ✅
+v3: 多项目 adapter           🔄（费用系统已迁移，待验证新项目接入）
+v4: LLM Planner + DSL Validator  ✅
 v5: LLM Recovery + Locator Repair
 v6: 平台化报告、权限、数据治理
 ```
 
-当前项目处于：
+当前处于 **v3 早期**。
 
-```text
-v0 → v1
-```
+## 扩展原则
 
-下一步仍应优先补齐费用系统 capability，例如：
-
-```text
-auth.login
-project.create
-project.addMembers
-expense.create
-expense.list
-expense.assertSplit
-```
-
-等费用系统 task 稳定后，再抽象 core，避免过早抽象。
-
-### 扩展原则
-
-- LLM 面向 capability，不面向 DOM。
-- 每个项目只实现 adapter，不重复实现通用 Runtime。
-- 所有 DSL 必须 schema 校验后才能执行。
-- 删除、审批、支付、提交等高风险 task 必须有风险等级和执行策略。
-- 失败恢复按 Runtime retry、Auth recovery、Locator fallback、LLM recovery 分层，LLM 是最后一层。
+- LLM 面向 capability，不面向 DOM
+- 每个项目只实现 adapter，不重复实现通用 Runtime
+- 所有 DSL 必须 schema 校验后才能执行
+- 高风险 task 必须有 riskLevel 标记
+- 失败恢复按 Runtime retry → Auth recovery → Locator fallback → LLM recovery 分层

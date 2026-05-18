@@ -90,14 +90,21 @@
 - [x] 将费用系统迁移为第一个 project adapter：`src/projects/expense/`。
 - [x] 设计 `Capability` 类型和 Capability Registry。
 - [ ] 为新项目定义接入模板：
-  - `capabilities.ts`
-  - `tasks.ts`
-  - `pages/`
-  - `locators.ts`
-  - `fixtures.ts`
+  - [x] `capabilities.ts`（已作为费用系统示例）
+  - [x] `tasks.ts`（已作为费用系统示例）
+  - [x] `pages/`（已作为费用系统示例）
+  - [ ] `locators.ts`（Locator Layer 完成后补充）
+  - [ ] `fixtures.ts`
 - [x] 增加跨项目测试目录结构：
-  - `tests/expense/`
-  - `tests/<project>/`
-  - `tests/planner/`
+  - [x] `tests/expense/`
+  - [x] `tests/<project>/`
+  - [x] `tests/planner/`
 - [x] 为 capability 增加 `riskLevel`，区分 `read`、`write`、`destructive`。
 - [ ] 建立新项目接入流程文档：录制、提炼 capability、定义 DSL、实现 adapter、注册 registry、验证 E2E。
+
+## 技术债务
+
+- [ ] 清理旧的 `src/planner/registry.ts` 和 `src/planner/planner.ts`（已迁移到 `src/core/planner/`）。
+- [ ] 清理旧的 `src/pages/expense-app.ts`（已迁移到 `src/projects/expense/pages/`）。
+- [ ] `CapabilityRegistry` 当前未在 Executor 或 Planner 中实际使用（仅定义了接口）。
+- [ ] `ProjectAdapter` 接口中的 `createExecutor` 方法尚未实现。

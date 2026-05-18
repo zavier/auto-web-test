@@ -1,33 +1,67 @@
 # 当前进度
 
-更新时间：2026-05-17
+更新时间：2026-05-18
 
 ## 已完成
 
-- 初始化 Playwright + TypeScript 项目。
-- 将录制脚本提炼为业务 DSL。
-- 实现第一版 `WorkflowExecutor`。
-- 实现费用系统 `ExpenseApp` Runtime。
-- 跑通第一条最小闭环测试。
+- [x] 初始化 Playwright + TypeScript 项目
+- [x] 将录制脚本提炼为业务 DSL
+- [x] 实现 `WorkflowExecutor`（结构化日志、task 输出传递）
+- [x] 实现费用系统 `ExpenseApp` Runtime
+- [x] DSL 运行时 schema 校验（zod）
+- [x] 环境变量管理（`.env.example` + `dotenv`）
+- [x] LLM Planner 接入（OpenAI + Capability Registry + CLI）
+- [x] Capability Registry（从 zod schema 自动提取 capability）
+- [x] Core 层抽取（`src/core/`：DSL 类型、Planner、Capability Registry）
+- [x] 费用系统迁移为第一个 Project Adapter（`src/projects/expense/`）
+- [x] 跨项目测试目录结构（`tests/planner/`、`tests/expense/`）
+- [x] `riskLevel` 支持（`read`/`write`/`destructive`）
+- [x] 跑通第一条最小闭环测试
 
-已通过命令：
-
-```bash
-npx tsc --noEmit
-npx playwright test tests/expense-workflow.spec.ts --project=chromium
-```
-
-最后一次 Playwright 结果：
+## 当前架构
 
 ```text
-1 passed
+src/
+  core/                      ← 通用层
+    dsl/types.ts             — TaskLog, WorkflowResult, TaskOutput
+    planner/
+      types.ts               — Capability, ProjectAdapter, ArgMeta
+      registry.ts            — 从 zod schema 提取 capability
+      planner.ts             — OpenAI 调用 + prompt + 修正回路
+      cli.ts                 — 通用 CLI stub
+    capability-registry.ts   — 聚合所有 adapter
+
+  projects/
+    expense/                 ← 第一个 adapter
+      tasks.ts               — zod schema
+      capabilities.ts        — capability 注册
+      pages/                 — Runtime（待迁移）
+
+  dsl.ts                     — 兼容层（re-export core + 费用 schema）
+  executor.ts                — 兼容层（费用系统 Executor）
+  planner/
+    cli.ts                   — 费用系统特定 CLI
+    registry.ts              — 旧 registry（待清理）
+    planner.ts               — 旧 planner（待清理）
 ```
 
 ## 当前验证流程
 
-测试入口：`tests/expense-workflow.spec.ts`
+测试入口：
 
-当前 workflow：
+```bash
+# E2E
+npx playwright test tests/expense/workflow.spec.ts --project=chromium
+
+# Planner
+npx tsx tests/planner/registry.test.ts
+npx tsx tests/planner/planner.test.ts
+
+# 类型检查
+npx tsc --noEmit
+```
+
+当前 workflow（DSL 示例）：
 
 ```text
 auth.login(admin/admin)
@@ -36,153 +70,32 @@ project.addMembers(自动化1号, 自动化2号, 自动化3号)
 expense.create(自动化1号 支付 50 元饮食费用, 三人分摊, 备注 111)
 ```
 
-当前项目流程已确认：
+Planner 使用（CLI）：
+
+```bash
+OPENAI_API_KEY=sk-xxx npx tsx src/planner/cli.ts "创建一个叫团建的项目"
+```
+
+## 迭代阶段
 
 ```text
-Playwright codegen 录制
-→ 工程化为 Task / Action / Locator / DSL
-→ LLM Planner 将用户提示转换成结构化 DSL
-→ WorkflowExecutor / Runtime 执行 DSL
-→ LLM 仅在少数异常恢复和语义判断场景介入
+v0: 单项目单流程跑通        ✅
+v1: 单项目多 task 能力化     ✅
+v2: 抽出 core runtime        ✅
+v3: 多项目 adapter           🔄（费用系统已迁移，待验证新项目接入）
+v4: LLM Planner + DSL Validator  ✅
+v5: LLM Recovery + Locator Repair
+v6: 平台化报告、权限、数据治理
 ```
 
-需要避免的错误方向：
+当前处于 **v3 早期**：Core 和第一个 Adapter 已建立，需要验证新项目能否顺利接入。
 
-```text
-用户提示
-→ LLM 逐步控制浏览器
-→ 每一步都重新读页面并决策
-```
+## 已知事实（保持有效）
 
-## 已发现事实
-
-### 1. 系统 Chrome 可用
-
-本机有 `/Applications/Google Chrome.app`。Playwright 不需要下载内置 Chromium，可以通过 `channel: 'chrome'` 使用系统 Chrome。
-
-### 2. 登录接口返回 JWT，但前端没有写入 storage
-
-登录接口：
-
-```text
-POST /expense/user/login
-```
-
-返回：
-
-```json
-{
-  "status": 0,
-  "data": "<jwt>"
-}
-```
-
-但登录后：
-
-```text
-localStorage = {}
-sessionStorage = {}
-```
-
-所以 Runtime 当前捕获登录响应，并设置：
-
-```text
-Authorization: <jwt>
-```
-
-### 3. 后续接口使用裸 Authorization header
-
-后续 API 请求使用：
-
-```text
-Authorization: <jwt>
-```
-
-不是：
-
-```text
-Authorization: Bearer <jwt>
-```
-
-### 4. 创建项目的成员控件是 AMIS input-array
-
-页面 schema 中成员字段：
-
-```json
-{
-  "name": "members",
-  "type": "input-array",
-  "items": {
-    "type": "input-text"
-  }
-}
-```
-
-实际输入框 name 是：
-
-```text
-input[name="flat"]
-```
-
-发现的问题：
-
-- DOM value 可以正确显示成员名称。
-- 但提交 payload 可能变成 `["", "自动化2号", ""]` 或最后一项为空。
-- 因此当前创建项目用 API commit。
-
-### 5. 创建项目后不一定出现在第一页
-
-不能用“当前列表页可见项目名”作为创建成功断言。
-
-当前做法：
-
-```text
-POST /expense/project/create
-GET /expense/project/list?page=1&size=1000
-按 projectName 找 projectId
-```
-
-### 6. 新增费用 date 字段需要秒级时间戳
-
-错误用法：
-
-```json
-{
-  "date": "2026-05-17"
-}
-```
-
-会返回系统错误。
-
-错误用法：
-
-```json
-{
-  "date": 1779021599544
-}
-```
-
-会被后端解释成异常日期。
-
-正确用法：
-
-```json
-{
-  "date": 1779021649
-}
-```
-
-也就是：
-
-```ts
-Math.floor(Date.now() / 1000)
-```
-
-## 当前实现限制
-
-- 还没有真正接入 LLM Planner。
-- DSL 还没有运行时 schema 校验。
-- `project.addMembers` 目前不是完整 UI 提交，而是 UI 填写 + API commit。
-- `expense.create` 目前不是完整 UI 提交，而是 API commit + 页面结果验证。
-- `selectFirstVisibleOption` 目前未被主流程使用，后续需要重新设计为稳定 Select Action。
-- 没有清理测试数据，项目和费用会留在测试环境中。
+1. 系统 Chrome 可用（`channel: 'chrome'`）
+2. 登录接口返回 JWT，前端不写入 storage，Runtime 需手动注入 `Authorization: <jwt>`
+3. 后续接口使用裸 JWT（非 Bearer）
+4. 创建项目的成员控件是 AMIS input-array，有 sync bug，当前用 API commit
+5. 创建项目后不一定出现在第一页，用 API 查询获取 projectId
+6. 费用 date 字段需要秒级时间戳 `Math.floor(Date.now() / 1000)`
+7. 测试数据不清理，项目/费用留在测试环境
