@@ -1,5 +1,7 @@
 import { z } from 'zod';
 
+export type { TaskOutput, TaskLog, WorkflowResult } from './core/dsl/types.js';
+
 const AuthLoginTask = z.object({
   task: z.literal('auth.login').describe('登录费用管理系统'),
   args: z.object({
@@ -46,28 +48,6 @@ export const WorkflowSchema = z.array(WorkflowTaskSchema);
 
 export type WorkflowTask = z.infer<typeof WorkflowTaskSchema>;
 export type Workflow = z.infer<typeof WorkflowSchema>;
-
-export type TaskOutput = Record<string, unknown> | undefined;
-
-export type TaskLog = {
-  task: string;
-  status: 'started' | 'success' | 'failed';
-  startTime: number;
-  endTime?: number;
-  durationMs?: number;
-  output?: TaskOutput;
-  error?: string;
-};
-
-export type WorkflowResult = {
-  success: boolean;
-  durationMs: number;
-  logs: TaskLog[];
-  outputs: {
-    projectId?: number;
-    projectName?: string;
-  };
-};
 
 export const sampleExpenseWorkflow = (suffix = Date.now().toString()): Workflow => [
   {
