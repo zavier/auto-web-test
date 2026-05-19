@@ -1,20 +1,10 @@
 import type { ZodType } from 'zod';
 import type { ArgMeta, Capability } from './types.js';
 
-type ZodSchemaLike = {
-  def: {
-    type: string;
-    [key: string]: unknown;
-  };
-  type: string;
-  description?: string;
-};
-
-function getBaseType(schema: ZodSchemaLike): string {
-  const type = schema.def.type;
+function getBaseType(schema: ZodType): string {
+  const type = (schema as any).type;
   if (type === 'optional') {
-    const inner = schema.def.innerType as ZodSchemaLike;
-    return getBaseType(inner);
+    return getBaseType((schema as any).unwrap());
   }
   if (type === 'array') {
     return 'array';
@@ -22,30 +12,23 @@ function getBaseType(schema: ZodSchemaLike): string {
   return type;
 }
 
-function isOptional(schema: ZodSchemaLike): boolean {
-  return schema.def.type === 'optional';
+function isOptional(schema: ZodType): boolean {
+  return (schema as any).type === 'optional';
 }
 
 export function getCapabilities(workflowTaskSchema: ZodType, projectName: string): Capability[] {
-  const unionSchema = workflowTaskSchema as unknown as {
-    def: {
-      type: string;
-      options: ZodSchemaLike[];
-    };
-  };
-
+  const options = (workflowTaskSchema as any).options as ZodType[];
   const capabilities: Capability[] = [];
 
-  for (const option of unionSchema.def.options) {
-    const shape = (option.def as unknown as { shape: Record<string, ZodSchemaLike> }).shape;
+  for (const option of options) {
+    const shape = (option as any).shape as Record<string, ZodType>;
 
     const taskSchema = shape.task;
-    const literalValues = (taskSchema.def as unknown as { values: string[] }).values;
-    const taskName = literalValues[0];
-    const taskDescription = taskSchema.description ?? '';
+    const taskName = (taskSchema as any).value as string;
+    const taskDescription = (taskSchema as any).description ?? '';
 
     const argsSchema = shape.args;
-    const argsShape = (argsSchema.def as unknown as { shape: Record<string, ZodSchemaLike> }).shape;
+    const argsShape = (argsSchema as any).shape as Record<string, ZodType>;
 
     const args: ArgMeta[] = [];
     for (const [argName, argSchema] of Object.entries(argsShape)) {
@@ -53,7 +36,7 @@ export function getCapabilities(workflowTaskSchema: ZodType, projectName: string
         name: argName,
         type: getBaseType(argSchema),
         required: !isOptional(argSchema),
-        description: argSchema.description ?? '',
+        description: (argSchema as any).description ?? '',
       });
     }
 

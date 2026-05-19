@@ -1,33 +1,29 @@
-import type { Page } from '@playwright/test';
-import type { Workflow, WorkflowTask, TaskOutput } from './dsl.js';
-import { WorkflowSchema } from './dsl.js';
-import type { WorkflowResult, TaskLog } from './core/dsl/types.js';
-import { ExpenseApp } from './pages/expense-app.js';
+import type { TaskOutput, WorkflowResult, TaskLog } from './core/dsl/types.js';
 import { TemplateEngine } from './core/template/engine.js';
 import { buildContext } from './core/template/context.js';
-import type { VariableContext } from './core/template/types.js';
-import type { TemplateWorkflow } from './core/template/types.js';
+import type { VariableContext, TemplateWorkflow } from './core/template/types.js';
+import type { ProjectAdapter } from './core/planner/types.js';
+
+type GenericWorkflowTask = {
+  task: string;
+  args: Record<string, unknown>;
+};
 
 export class WorkflowExecutor {
-  private readonly app: ExpenseApp;
+  private readonly adapter: ProjectAdapter;
 
-  constructor(page: Page) {
-    this.app = new ExpenseApp(page);
+  constructor(adapter: ProjectAdapter) {
+    this.adapter = adapter;
   }
 
   async run(
-    workflow: Workflow | TemplateWorkflow,
+    workflow: Array<GenericWorkflowTask> | TemplateWorkflow,
     options?: { context?: Partial<VariableContext> }
   ): Promise<WorkflowResult> {
     const hasTemplate = JSON.stringify(workflow).includes('${');
     const resolved = hasTemplate
       ? TemplateEngine.resolve(workflow, buildContext(options?.context))
       : workflow;
-
-    const parseResult = WorkflowSchema.safeParse(resolved);
-    if (!parseResult.success) {
-      throw new Error(`DSL validation failed: ${parseResult.error.message}`);
-    }
 
     const result: WorkflowResult = {
       success: true,
@@ -38,7 +34,7 @@ export class WorkflowExecutor {
 
     const workflowStart = Date.now();
 
-    for (const step of parseResult.data) {
+    for (const step of resolved as Array<GenericWorkflowTask>) {
       const log: TaskLog = {
         task: step.task,
         status: 'started',
@@ -46,9 +42,9 @@ export class WorkflowExecutor {
       };
 
       try {
-        const output = await this.runTask(step);
+        const output = await this.adapter.executeTask(step.task, step.args, { outputs: result.outputs });
         log.status = 'success';
-        log.output = output;
+        log.output = output as TaskOutput;
         if (output) {
           Object.assign(result.outputs, output);
         }
@@ -66,24 +62,5 @@ export class WorkflowExecutor {
 
     result.durationMs = Date.now() - workflowStart;
     return result;
-  }
-
-  private async runTask(step: WorkflowTask): Promise<TaskOutput> {
-    switch (step.task) {
-      case 'auth.login':
-        await this.app.login(step.args);
-        return undefined;
-      case 'project.create':
-        return await this.app.createProject(step.args);
-      case 'project.addMembers':
-        return await this.app.addMembers(step.args);
-      case 'expense.create':
-        await this.app.createExpense(step.args);
-        return undefined;
-      default: {
-        const unreachable: never = step;
-        throw new Error(`Unsupported task: ${JSON.stringify(unreachable)}`);
-      }
-    }
   }
 }

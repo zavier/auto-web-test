@@ -1,38 +1,56 @@
+import { describe, test, expect } from 'vitest';
 import { getCapabilities } from '../../src/core/planner/registry.js';
 import { WorkflowTaskSchema } from '../../src/projects/expense/tasks.js';
 
-const caps = getCapabilities(WorkflowTaskSchema, 'expense');
+describe('Capability Registry', () => {
+  const caps = getCapabilities(WorkflowTaskSchema, 'expense');
 
-console.assert(caps.length === 4, `Expected 4, got ${caps.length}`);
+  test('extracts all 4 expense capabilities', () => {
+    expect(caps).toHaveLength(4);
+  });
 
-const tasks = caps.map((c) => c.task);
-console.assert(tasks.includes('auth.login'));
-console.assert(tasks.includes('project.create'));
-console.assert(tasks.includes('project.addMembers'));
-console.assert(tasks.includes('expense.create'));
+  test('includes all expected tasks', () => {
+    const tasks = caps.map((c) => c.task);
+    expect(tasks).toContain('auth.login');
+    expect(tasks).toContain('project.create');
+    expect(tasks).toContain('project.addMembers');
+    expect(tasks).toContain('expense.create');
+  });
 
-for (const cap of caps) {
-  console.assert(cap.description.length > 0, `${cap.task} missing description`);
-  console.assert(cap.args.length > 0, `${cap.task} has no args`);
-  console.assert(cap.project === 'expense', `${cap.task} project mismatch`);
-}
+  test('each capability has description and args', () => {
+    for (const cap of caps) {
+      expect(cap.description.length).toBeGreaterThan(0);
+      expect(cap.args.length).toBeGreaterThan(0);
+      expect(cap.project).toBe('expense');
+    }
+  });
 
-const expenseCap = caps.find((c) => c.task === 'expense.create')!;
-const argNames = expenseCap.args.map((a) => a.name);
-console.assert(argNames.includes('payer'));
-console.assert(argNames.includes('participants'));
-console.assert(argNames.includes('amount'));
-console.assert(argNames.includes('category'));
-console.assert(argNames.includes('remark'));
+  test('expense.create has correct args', () => {
+    const expenseCap = caps.find((c) => c.task === 'expense.create')!;
+    const argNames = expenseCap.args.map((a) => a.name);
+    expect(argNames).toContain('payer');
+    expect(argNames).toContain('participants');
+    expect(argNames).toContain('amount');
+    expect(argNames).toContain('category');
+    expect(argNames).toContain('remark');
+  });
 
-const remarkArg = expenseCap.args.find((a) => a.name === 'remark')!;
-console.assert(remarkArg.required === false);
-console.assert(remarkArg.type === 'string');
+  test('remark is optional string', () => {
+    const expenseCap = caps.find((c) => c.task === 'expense.create')!;
+    const remarkArg = expenseCap.args.find((a) => a.name === 'remark')!;
+    expect(remarkArg.required).toBe(false);
+    expect(remarkArg.type).toBe('string');
+  });
 
-const amountArg = expenseCap.args.find((a) => a.name === 'amount')!;
-console.assert(amountArg.type === 'number');
+  test('amount is number', () => {
+    const expenseCap = caps.find((c) => c.task === 'expense.create')!;
+    const amountArg = expenseCap.args.find((a) => a.name === 'amount')!;
+    expect(amountArg.type).toBe('number');
+  });
 
-const participantsArg = expenseCap.args.find((a) => a.name === 'participants')!;
-console.assert(participantsArg.type === 'array');
-
-console.log('All registry tests passed');
+  test('participants is array', () => {
+    const expenseCap = caps.find((c) => c.task === 'expense.create')!;
+    const participantsArg = expenseCap.args.find((a) => a.name === 'participants')!;
+    expect(participantsArg.type).toBe('array');
+  });
+});

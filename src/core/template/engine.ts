@@ -51,7 +51,6 @@ export class TemplateEngine {
 
   private static lookup(path: string, context: VariableContext): unknown {
     const parts = path.split('.');
-    const scopes: (keyof VariableContext)[] = ['output', 'input', 'env', 'global'];
 
     let root: unknown;
     let keys: string[] = [];
@@ -60,14 +59,9 @@ export class TemplateEngine {
       root = context[parts[0] as keyof VariableContext];
       keys = parts.slice(1);
     } else {
-      for (const scope of scopes) {
-        const scopeObj = context[scope];
-        if (scopeObj !== null && typeof scopeObj === 'object' && parts[0] in scopeObj) {
-          root = scopeObj;
-          keys = parts;
-          break;
-        }
-      }
+      throw new TemplateError(
+        `Template variable '${path}' must use an explicit scope prefix (env, global, input, or output).`
+      );
     }
 
     if (root === undefined) {

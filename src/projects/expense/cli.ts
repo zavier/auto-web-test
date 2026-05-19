@@ -1,6 +1,6 @@
-import { createPlanner } from '../core/planner/planner.js';
-import { getCapabilities } from '../core/planner/registry.js';
-import { WorkflowSchema, WorkflowTaskSchema } from '../dsl.js';
+import { createPlanner } from '../../core/planner/planner.js';
+import { getCapabilities } from '../../core/planner/registry.js';
+import { WorkflowSchema, WorkflowTaskSchema } from './tasks.js';
 
 async function main(): Promise<void> {
   const args = process.argv.slice(2);
@@ -18,7 +18,7 @@ async function main(): Promise<void> {
 
   if (!input) {
     process.stderr.write(
-      'Usage: npx tsx src/planner/cli.ts [--model <model>] "<natural language>"\n'
+      'Usage: npx tsx src/projects/expense/cli.ts [--model <model>] "<natural language>"\n'
     );
     process.exit(1);
   }
