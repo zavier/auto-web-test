@@ -13,7 +13,12 @@ export type Capability = {
   riskLevel: 'read' | 'write' | 'destructive';
 };
 
+export type TaskContext = {
+  outputs: Record<string, unknown>;
+};
+
 export type ProjectAdapter = {
   project: string;
   getCapabilities(): Capability[];
+  executeTask(task: string, args: unknown, context: TaskContext): Promise<unknown>;
 };

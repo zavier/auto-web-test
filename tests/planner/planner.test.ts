@@ -1,19 +1,29 @@
-import { createPlanner } from '../../src/core/planner/planner.js';
+import { describe, test, expect, vi } from 'vitest';
+import { createPlanner, PlannerError } from '../../src/core/planner/planner.js';
 import { getCapabilities } from '../../src/core/planner/registry.js';
 import { WorkflowSchema, WorkflowTaskSchema } from '../../src/projects/expense/tasks.js';
 
-const capabilities = getCapabilities(WorkflowTaskSchema, 'expense');
-const planner = createPlanner({ openaiApiKey: 'sk-test' }, capabilities, WorkflowSchema);
+vi.mock('openai', () => ({
+  default: class MockOpenAI {
+    chat = {
+      completions: {
+        create: vi.fn().mockResolvedValue({ choices: [] }),
+      },
+    };
+  },
+}));
 
-const result = await planner.plan('');
-console.assert(Array.isArray(result) && result.length === 0, 'Empty input should return empty array');
+describe('LLM Planner', () => {
+  const capabilities = getCapabilities(WorkflowTaskSchema, 'expense');
 
-const badPlanner = createPlanner({ openaiApiKey: 'sk-invalid' }, capabilities, WorkflowSchema);
-try {
-  await badPlanner.plan('创建一个项目');
-  console.assert(false, 'Should have thrown');
-} catch (e) {
-  console.assert(e instanceof Error);
-}
+  test('empty input returns empty array', async () => {
+    const planner = createPlanner({ openaiApiKey: 'sk-test' }, capabilities, WorkflowSchema);
+    const result = await planner.plan('');
+    expect(result).toEqual([]);
+  });
 
-console.log('All planner tests passed');
+  test('empty LLM response throws PlannerError', async () => {
+    const planner = createPlanner({ openaiApiKey: 'sk-test' }, capabilities, WorkflowSchema);
+    await expect(planner.plan('创建一个项目')).rejects.toThrow(PlannerError);
+  });
+});

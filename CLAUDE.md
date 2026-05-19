@@ -1,20 +1,29 @@
 # CLAUDE.md
 
+AI planning + deterministic execution framework for web automation.
+
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
 ## Commands
 
 | Task | Command |
 |------|---------|
+| Install dependencies | `npm install` |
 | Type check | `npx tsc --noEmit` |
-| Run all tests | `npx playwright test` |
+| Run all tests | `npm run test:unit && npx playwright test` |
 | Run expense workflow test | `npx playwright test tests/expense/workflow.spec.ts --project=chromium` |
 | Run a single test (headed) | `npx playwright test <path> --project=chromium --headed` |
 | Run with UI | `npm run test:headed` |
-| Run planner registry test | `npx tsx tests/planner/registry.test.ts` |
-| Run planner test | `npx tsx tests/planner/planner.test.ts` |
+| Run unit tests | `npx vitest run` |
 
 Playwright is configured to use system Chrome (`channel: 'chrome'` in `playwright.config.ts`).
+
+Vitest config at `vitest.config.ts` excludes `*.spec.ts` to avoid Playwright runner conflict.
+
+## Conventions
+
+- **No barrel files.** Imports go directly to the file that defines the symbol (all `index.ts` pass-throughs were removed).
+- **Mock OpenAI in unit tests** with `vi.mock('openai', ...)` — real network calls hang on invalid API keys.
 
 ## Architecture
 
@@ -28,49 +37,61 @@ Cross-project generic capabilities:
 - **`src/core/planner/types.ts`** — `Capability`, `ProjectAdapter`, `ArgMeta` types
 - **`src/core/planner/registry.ts`** — Extracts `Capability[]` from zod schemas via introspection
 - **`src/core/planner/planner.ts`** — Generic LLM Planner (OpenAI + prompt + correction loop)
-- **`src/core/capability-registry.ts`** — Aggregates all project adapters
+- **`src/core/template/`** — TemplateEngine for parameterizing workflow steps
+- **`src/core/recorder/`** — WorkflowParameterizer with configurable mapping rules
 
 ### 2. Project Adapter Layer (`src/projects/`)
 
-Each business system implements its own adapter (minimum 3 files):
+Each business system implements its own adapter:
 
 - **`tasks.ts`** — Zod schema definitions with `.describe()` annotations
 - **`capabilities.ts`** — Registers capabilities for this project
-- **`pages/<project>-app.ts`** — Runtime implementation
+- **`adapter.ts`** — `ProjectAdapter` implementation (orchestrates UI + API)
+- **`api-client.ts`** — Stateless API client
+- **`pages/<project>-page.ts`** — Stateless page object (pure DOM)
+- **`cli.ts`** — Project-specific natural-language-to-DSL CLI
+- **`recorder-rules.ts`** — Workflow recording parameterization rules
 
 Current adapters:
 - `src/projects/expense/` — Expense management system (first adapter)
 
-### 3. Compatibility Layer (`src/dsl.ts`, `src/executor.ts`)
+### 3. Executor Layer (`src/executor.ts`)
 
-Thin wrappers that re-export from core + keep expense-specific schemas:
-- `src/dsl.ts` — Re-exports generic types + defines expense task schemas
-- `src/executor.ts` — Expense-specific WorkflowExecutor
+- `src/executor.ts` — Generic `WorkflowExecutor` that dispatches to a `ProjectAdapter`
 
-### 4. Legacy (`src/planner/`, `src/pages/`)
+### 4. Project-specific CLI
 
-Old files pending cleanup:
-- `src/planner/registry.ts` — Migrated to `src/core/planner/registry.ts`
-- `src/planner/planner.ts` — Migrated to `src/core/planner/planner.ts`
-- `src/pages/expense-app.ts` — Should migrate to `src/projects/expense/pages/`
+- `src/projects/expense/cli.ts` — Expense project CLI for natural-language-to-DSL planning
 
 ## Test Structure
+
+- **E2E tests** (`tests/**/*.spec.ts`) — Playwright browser tests
+- **Unit tests** (`tests/**/*.test.ts`) — Vitest, no browser needed
 
 ```
 tests/
   planner/
-    registry.test.ts    — Tests Capability extraction from zod schemas
-    planner.test.ts     — Tests LLM Planner (empty input, invalid key)
+    registry.test.ts     — Capability extraction from zod schemas
+    planner.test.ts      — LLM Planner (mocked OpenAI)
+  template/
+    engine.test.ts       — Template variable resolution
+    context.test.ts      — VariableContext builder
+  recorder/
+    parameterizer.test.ts — Workflow recording parameterization
   expense/
-    workflow.spec.ts    — E2E expense workflow test
+    workflow.spec.ts     — E2E expense workflow
 ```
 
 ## Current Design Decisions
 
 - **LLM does not control the browser directly.** It generates structured DSL. Execution is handled by the Executor and Runtime.
+- **WorkflowExecutor is generic** — it dispatches tasks to a `ProjectAdapter` without knowing project-specific logic.
+- **ProjectAdapter describes AND executes** — each adapter provides capabilities (for the Planner) and task execution (for the Executor).
+- **Page objects and API clients are stateless** — all cross-task state flows through `context.outputs` passed between steps.
 - **API/UI hybrid execution is intentional for v0.** Some actions use UI for input and API for commit because of AMIS component sync issues.
 - **Task output is more reliable than page visibility.** Project lists are paginated, so `project.create` queries the API to get `projectId`.
-- **Capability Registry extracts metadata from zod schemas.** No separate registration file needed — `.describe()` on schema fields is the source of truth.
+- **Capability Registry extracts metadata from zod schemas.** Uses Zod v4 public API (`.shape`, `.options`, `.value`, `.type`, `.unwrap()`).
+- **Template variables require explicit scope prefix.** `${env.VAR}`, `${global.VAR}`, `${input.VAR}`, `${output.VAR}` — bare names are rejected.
 - **Multi-project architecture is in early v3.** Core layer extracted, first adapter (expense) created, but new project onboarding not yet validated.
 
 ## Known Quirks of the Target Application
@@ -98,4 +119,17 @@ See `docs/todo.md` for the full backlog. Current focus:
 1. **P1 UI Action Layer** — Stabilize AMIS Select actions, fix input-array sync
 2. **P1 Locator Layer** — Establish locator registry, remove fragile `.first()`/`.last()`
 3. **P2 Runtime Enhancement** — Login recovery, API format compatibility, retry policies
-4. **P4 Cleanup** — Remove old `src/planner/` and `src/pages/` files, validate new project onboarding
+
+## Agent skills
+
+### Issue tracker
+
+Issues and PRDs are tracked as GitHub issues. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default canonical labels are used: `needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context layout — one `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.
